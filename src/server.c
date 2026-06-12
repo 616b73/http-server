@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-// #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -15,6 +14,11 @@
 #define PORT 8080
 #define BACKLOG 10
 #define BUFFER_SIZE 1024
+
+typedef struct {
+    char key[128];
+    char value[512];
+} HttpHeader;
 
 void handle_sigchld(int sig) {
     (void)sig; // suppress unused parameter warning
@@ -100,9 +104,47 @@ int main()
                     printf("[PID %d] Parsed Request - Method: %s, URI: %s, Version: %s\n", getpid(), method, uri, version);
                 }
 
-                char *headers_end = strstr(buffer, "\r\n\r\n");
-                if (headers_end) {
-                    // Headers received
+                HttpHeader headers[64];
+                int header_count = 0;
+
+                char *line = strstr(buffer, "\r\n");
+                if (line) {
+                    line += 2; // Skip first \r\n (request line)
+                    while (line && header_count < 64) {
+                        char *next_line = strstr(line, "\r\n");
+                        if (next_line == line) {
+                            // End of headers (\r\n\r\n)
+                            break;
+                        }
+                        
+                        if (next_line) {
+                            *next_line = '\0';
+                        }
+                        
+                        char *colon = strchr(line, ':');
+                        if (colon) {
+                            *colon = '\0';
+                            char *key = line;
+                            char *value = colon + 1;
+                            
+                            while (*value == ' ') value++; // Trim leading whitespace
+                            
+                            strncpy(headers[header_count].key, key, sizeof(headers[header_count].key) - 1);
+                            headers[header_count].key[sizeof(headers[header_count].key) - 1] = '\0';
+                            
+                            strncpy(headers[header_count].value, value, sizeof(headers[header_count].value) - 1);
+                            headers[header_count].value[sizeof(headers[header_count].value) - 1] = '\0';
+                            
+                            printf("[PID %d] Parsed Header -> %s: %s\n", getpid(), headers[header_count].key, headers[header_count].value);
+                            header_count++;
+                        }
+                        
+                        if (next_line) {
+                            line = next_line + 2;
+                        } else {
+                            break;
+                        }
+                    }
                 }
 
                 // Phase 3: Serve Static Files
