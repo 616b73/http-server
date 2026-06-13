@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <strings.h>
 
 #define PORT 8080
 #define BACKLOG 10
@@ -104,6 +105,9 @@ int main()
                     printf("[PID %d] Parsed Request - Method: %s, URI: %s, Version: %s\n", getpid(), method, uri, version);
                 }
 
+                char *headers_end = strstr(buffer, "\r\n\r\n");
+                size_t headers_len = headers_end ? (size_t)(headers_end - buffer) + 4 : (size_t)bytes_read;
+
                 HttpHeader headers[64];
                 int header_count = 0;
 
@@ -147,47 +151,100 @@ int main()
                     }
                 }
 
-                // Phase 3: Serve Static Files
-                char file_path[512] = "public";
-                if (strcmp(uri, "/") == 0) {
-                    strncat(file_path, "/index.html", sizeof(file_path) - strlen(file_path) - 1);
-                } else {
-                    strncat(file_path, uri, sizeof(file_path) - strlen(file_path) - 1);
+                int content_length = 0;
+                for (int i = 0; i < header_count; i++) {
+                    if (strcasecmp(headers[i].key, "Content-Length") == 0) {
+                        content_length = atoi(headers[i].value);
+                        break;
+                    }
                 }
 
-                int file_fd = open(file_path, O_RDONLY);
-                if (file_fd < 0) {
-                    const char *not_found_response = 
-                        "HTTP/1.1 404 Not Found\r\n"
-                        "Content-Type: text/plain\r\n"
-                        "Content-Length: 13\r\n"
-                        "Connection: close\r\n"
-                        "\r\n"
-                        "404 Not Found";
-                    write(client_fd, not_found_response, strlen(not_found_response));
-                    printf("[PID %d] Served 404 Not Found for %s\n", getpid(), file_path);
-                } else {
-                    struct stat file_stat;
-                    fstat(file_fd, &file_stat);
-                    off_t file_size = file_stat.st_size;
-
-                    char header[256];
-                    snprintf(header, sizeof(header),
-                             "HTTP/1.1 200 OK\r\n"
-                             "Content-Type: text/html\r\n"
-                             "Content-Length: %ld\r\n"
-                             "Connection: close\r\n"
-                             "\r\n", (long)file_size);
-                    
-                    write(client_fd, header, strlen(header));
-
-                    char file_buffer[1024];
-                    ssize_t bytes_read_from_file;
-                    while ((bytes_read_from_file = read(file_fd, file_buffer, sizeof(file_buffer))) > 0) {
-                        write(client_fd, file_buffer, bytes_read_from_file);
+                char *body = NULL;
+                if (content_length > 0) {
+                    body = malloc(content_length + 1);
+                    if (body) {
+                        size_t body_read_so_far = bytes_read - headers_len;
+                        if (body_read_so_far > 0) {
+                            memcpy(body, buffer + headers_len, body_read_so_far);
+                        }
+                        
+                        size_t total_body_read = body_read_so_far;
+                        while (total_body_read < (size_t)content_length) {
+                            ssize_t more_bytes = read(client_fd, body + total_body_read, content_length - total_body_read);
+                            if (more_bytes <= 0) break;
+                            total_body_read += more_bytes;
+                        }
+                        body[total_body_read] = '\0';
                     }
-                    close(file_fd);
-                    printf("[PID %d] Served %s (%ld bytes)\n", getpid(), file_path, (long)file_size);
+                }
+
+                if (strcmp(method, "POST") == 0 && strcmp(uri, "/echo") == 0) {
+                    char header_buf[256];
+                    snprintf(header_buf, sizeof(header_buf),
+                             "HTTP/1.1 200 OK\r\n"
+                             "Content-Type: text/plain\r\n"
+                             "Content-Length: %d\r\n"
+                             "Connection: close\r\n"
+                             "\r\n", content_length);
+                    write(client_fd, header_buf, strlen(header_buf));
+                    if (body) {
+                        write(client_fd, body, content_length);
+                    }
+                    printf("[PID %d] Handled POST /echo (%d bytes)\n", getpid(), content_length);
+                } else if (strcmp(method, "GET") == 0) {
+                    // Phase 3: Serve Static Files
+                    char file_path[512] = "public";
+                    if (strcmp(uri, "/") == 0) {
+                        strncat(file_path, "/index.html", sizeof(file_path) - strlen(file_path) - 1);
+                    } else {
+                        strncat(file_path, uri, sizeof(file_path) - strlen(file_path) - 1);
+                    }
+
+                    int file_fd = open(file_path, O_RDONLY);
+                    if (file_fd < 0) {
+                        const char *not_found_response = 
+                            "HTTP/1.1 404 Not Found\r\n"
+                            "Content-Type: text/plain\r\n"
+                            "Content-Length: 13\r\n"
+                            "Connection: close\r\n"
+                            "\r\n"
+                            "404 Not Found";
+                        write(client_fd, not_found_response, strlen(not_found_response));
+                        printf("[PID %d] Served 404 Not Found for %s\n", getpid(), file_path);
+                    } else {
+                        struct stat file_stat;
+                        fstat(file_fd, &file_stat);
+                        off_t file_size = file_stat.st_size;
+
+                        char header_buf[256];
+                        snprintf(header_buf, sizeof(header_buf),
+                                 "HTTP/1.1 200 OK\r\n"
+                                 "Content-Type: text/html\r\n"
+                                 "Content-Length: %ld\r\n"
+                                 "Connection: close\r\n"
+                                 "\r\n", (long)file_size);
+                        
+                        write(client_fd, header_buf, strlen(header_buf));
+
+                        char file_buffer[1024];
+                        ssize_t bytes_read_from_file;
+                        while ((bytes_read_from_file = read(file_fd, file_buffer, sizeof(file_buffer))) > 0) {
+                            write(client_fd, file_buffer, bytes_read_from_file);
+                        }
+                        close(file_fd);
+                        printf("[PID %d] Served %s (%ld bytes)\n", getpid(), file_path, (long)file_size);
+                    }
+                } else {
+                    const char *bad_method = 
+                        "HTTP/1.1 405 Method Not Allowed\r\n"
+                        "Content-Length: 0\r\n"
+                        "Connection: close\r\n"
+                        "\r\n";
+                    write(client_fd, bad_method, strlen(bad_method));
+                }
+
+                if (body) {
+                    free(body);
                 }
             }
             else if (bytes_read < 0)
