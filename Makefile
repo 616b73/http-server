@@ -1,7 +1,7 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g -Iinclude
 
-SRCS = src/server.c
+SRCS = src/server.c src/http_parser.c src/router.c src/response.c
 OBJS = $(SRCS:.c=.o)
 TARGET = http-server
 
