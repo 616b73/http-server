@@ -9,19 +9,37 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <signal.h>
-#include <sys/wait.h>
 #include <strings.h>
+#include <pthread.h>
 #include "http_parser.h"
 #include "router.h"
+#include "queue.h"
 
 #define PORT 8080
 #define BACKLOG 10
+#define THREAD_POOL_SIZE 8
 
-void handle_sigchld(int sig) {
-    (void)sig; // suppress unused parameter warning
-    int saved_errno = errno;
-    while (waitpid(-1, NULL, WNOHANG) > 0);
-    errno = saved_errno;
+ThreadQueue connection_queue;
+
+void *worker_thread(void *arg) {
+    (void)arg;
+    while (1) {
+        int client_fd = queue_pop(&connection_queue);
+        
+        printf("[Thread %lu] Handling connection.\n", (unsigned long)pthread_self());
+        
+        HttpRequest *req = parse_http_request(client_fd);
+        if (req) {
+            handle_request(client_fd, req);
+            free_http_request(req);
+        } else {
+            printf("[Thread %lu] Failed to read or parse request.\n", (unsigned long)pthread_self());
+        }
+        
+        close(client_fd);
+        printf("[Thread %lu] Connection closed.\n\n", (unsigned long)pthread_self());
+    }
+    return NULL;
 }
 
 int main()
@@ -60,13 +78,11 @@ int main()
 
     printf("Server listening on port %d...\n", PORT);
 
-    struct sigaction sa;
-    sa.sa_handler = handle_sigchld;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        perror("sigaction");
-        exit(1);
+    queue_init(&connection_queue);
+    
+    pthread_t pool[THREAD_POOL_SIZE];
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        pthread_create(&pool[i], NULL, worker_thread, NULL);
     }
 
     while(1)
@@ -78,33 +94,7 @@ int main()
             continue;
         }
 
-        pid_t pid = fork();
-        if (pid < 0) {
-            perror("Fork failed");
-            close(client_fd);
-            continue;
-        }
-
-        if (pid == 0) { // Child process
-            close(listen_fd);
-
-            printf("Client connected (PID %d).\n", getpid());
-
-            HttpRequest *req = parse_http_request(client_fd);
-            if (req) {
-                handle_request(client_fd, req);
-                free_http_request(req);
-            } else {
-                printf("[PID %d] Failed to read or parse request.\n", getpid());
-            }
-            
-            close(client_fd);
-            printf("Client disconnected (PID %d).\n\n", getpid());
-            exit(0);
-        } else {
-            // Parent process
-            close(client_fd);
-        }
+        queue_push(&connection_queue, client_fd);
     }
 
 cleanup:
