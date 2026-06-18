@@ -5,6 +5,22 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+const char *get_mime_type(const char *file_path) {
+    const char *ext = strrchr(file_path, '.');
+    if (!ext) return "application/octet-stream";
+    
+    if (strcmp(ext, ".html") == 0 || strcmp(ext, ".htm") == 0) return "text/html";
+    if (strcmp(ext, ".css") == 0) return "text/css";
+    if (strcmp(ext, ".js") == 0) return "application/javascript";
+    if (strcmp(ext, ".json") == 0) return "application/json";
+    if (strcmp(ext, ".png") == 0) return "image/png";
+    if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0) return "image/jpeg";
+    if (strcmp(ext, ".gif") == 0) return "image/gif";
+    if (strcmp(ext, ".txt") == 0) return "text/plain";
+    
+    return "application/octet-stream";
+}
+
 void send_404(int client_fd, const char *file_path) {
     const char *not_found_response = 
         "HTTP/1.1 404 Not Found\r\n"
@@ -37,13 +53,15 @@ void send_static_file(int client_fd, const char *file_path) {
     fstat(file_fd, &file_stat);
     off_t file_size = file_stat.st_size;
 
+    const char *mime_type = get_mime_type(file_path);
+
     char header_buf[256];
     snprintf(header_buf, sizeof(header_buf),
              "HTTP/1.1 200 OK\r\n"
-             "Content-Type: text/html\r\n"
+             "Content-Type: %s\r\n"
              "Content-Length: %ld\r\n"
              "Connection: close\r\n"
-             "\r\n", (long)file_size);
+             "\r\n", mime_type, (long)file_size);
     
     write(client_fd, header_buf, strlen(header_buf));
 
