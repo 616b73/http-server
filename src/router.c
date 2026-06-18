@@ -1,11 +1,16 @@
 #include "router.h"
 #include "response.h"
+#include "cgi.h"
 #include <string.h>
 
 void handle_request(int client_fd, HttpRequest *req) {
     if (!req) return;
 
-    if (strcmp(req->method, "POST") == 0 && strcmp(req->uri, "/echo") == 0) {
+    if (strncmp(req->uri, "/cgi-bin/", 9) == 0) {
+        char script_path[512] = "public";
+        strncat(script_path, req->uri, sizeof(script_path) - strlen(script_path) - 1);
+        handle_cgi(client_fd, script_path, req);
+    } else if (strcmp(req->method, "POST") == 0 && strcmp(req->uri, "/echo") == 0) {
         send_echo_response(client_fd, req->body, req->content_length);
     } else if (strcmp(req->method, "GET") == 0) {
         char file_path[512] = "public";
