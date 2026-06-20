@@ -33,6 +33,18 @@ void send_404(int client_fd, const char *file_path) {
     printf("[PID %d] Served 404 Not Found for %s\n", getpid(), file_path);
 }
 
+void send_403(int client_fd) {
+    const char *forbidden_response = 
+        "HTTP/1.1 403 Forbidden\r\n"
+        "Content-Type: text/plain\r\n"
+        "Content-Length: 13\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+        "403 Forbidden";
+    write(client_fd, forbidden_response, strlen(forbidden_response));
+    printf("[PID %d] Served 403 Forbidden\n", getpid());
+}
+
 void send_405(int client_fd) {
     const char *bad_method = 
         "HTTP/1.1 405 Method Not Allowed\r\n"

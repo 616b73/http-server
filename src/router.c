@@ -6,6 +6,11 @@
 void handle_request(int client_fd, HttpRequest *req) {
     if (!req) return;
 
+    if (strstr(req->uri, "..") != NULL) {
+        send_403(client_fd);
+        return;
+    }
+
     if (strncmp(req->uri, "/cgi-bin/", 9) == 0) {
         char script_path[512] = "public";
         strncat(script_path, req->uri, sizeof(script_path) - strlen(script_path) - 1);
