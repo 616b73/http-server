@@ -18,9 +18,11 @@ typedef struct {
     int header_count;
     char *body;
     int content_length;
+    int keep_alive;
 } HttpRequest;
 
 HttpRequest *parse_http_request(int client_fd);
 void free_http_request(HttpRequest *req);
+const char *get_header(HttpRequest *req, const char *key);
 
 #endif

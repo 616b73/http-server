@@ -27,14 +27,23 @@ void *worker_thread(void *arg) {
         int client_fd = queue_pop(&connection_queue);
         
         printf("[Thread %lu] Handling connection.\n", (unsigned long)pthread_self());
-        
-        HttpRequest *req = parse_http_request(client_fd);
-        if (req) {
-            handle_request(client_fd, req);
-            free_http_request(req);
-        } else {
-            printf("[Thread %lu] Failed to read or parse request.\n", (unsigned long)pthread_self());
-        }
+
+        struct timeval tv;
+        tv.tv_sec = 5;  // 5 seconds timeout
+        tv.tv_usec = 0;
+        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
+        int keep_alive = 0;
+        do {
+            HttpRequest *req = parse_http_request(client_fd);
+            if (req) {
+                keep_alive = req->keep_alive;
+                handle_request(client_fd, req);
+                free_http_request(req);
+            } else {
+                keep_alive = 0; // Timeout or disconnected
+            }
+        } while (keep_alive);
         
         close(client_fd);
         printf("[Thread %lu] Connection closed.\n\n", (unsigned long)pthread_self());

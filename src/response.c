@@ -21,43 +21,46 @@ const char *get_mime_type(const char *file_path) {
     return "application/octet-stream";
 }
 
-void send_404(int client_fd, const char *file_path) {
-    const char *not_found_response = 
+void send_404(int client_fd, const char *file_path, int keep_alive) {
+    char response[256];
+    snprintf(response, sizeof(response),
         "HTTP/1.1 404 Not Found\r\n"
         "Content-Type: text/plain\r\n"
         "Content-Length: 13\r\n"
-        "Connection: close\r\n"
+        "Connection: %s\r\n"
         "\r\n"
-        "404 Not Found";
-    write(client_fd, not_found_response, strlen(not_found_response));
+        "404 Not Found", keep_alive ? "keep-alive" : "close");
+    write(client_fd, response, strlen(response));
     printf("[PID %d] Served 404 Not Found for %s\n", getpid(), file_path);
 }
 
-void send_403(int client_fd) {
-    const char *forbidden_response = 
+void send_403(int client_fd, int keep_alive) {
+    char response[256];
+    snprintf(response, sizeof(response),
         "HTTP/1.1 403 Forbidden\r\n"
         "Content-Type: text/plain\r\n"
         "Content-Length: 13\r\n"
-        "Connection: close\r\n"
+        "Connection: %s\r\n"
         "\r\n"
-        "403 Forbidden";
-    write(client_fd, forbidden_response, strlen(forbidden_response));
+        "403 Forbidden", keep_alive ? "keep-alive" : "close");
+    write(client_fd, response, strlen(response));
     printf("[PID %d] Served 403 Forbidden\n", getpid());
 }
 
-void send_405(int client_fd) {
-    const char *bad_method = 
+void send_405(int client_fd, int keep_alive) {
+    char response[256];
+    snprintf(response, sizeof(response),
         "HTTP/1.1 405 Method Not Allowed\r\n"
         "Content-Length: 0\r\n"
-        "Connection: close\r\n"
-        "\r\n";
-    write(client_fd, bad_method, strlen(bad_method));
+        "Connection: %s\r\n"
+        "\r\n", keep_alive ? "keep-alive" : "close");
+    write(client_fd, response, strlen(response));
 }
 
-void send_static_file(int client_fd, const char *file_path) {
+void send_static_file(int client_fd, const char *file_path, int keep_alive) {
     int file_fd = open(file_path, O_RDONLY);
     if (file_fd < 0) {
-        send_404(client_fd, file_path);
+        send_404(client_fd, file_path, keep_alive);
         return;
     }
 
@@ -72,8 +75,8 @@ void send_static_file(int client_fd, const char *file_path) {
              "HTTP/1.1 200 OK\r\n"
              "Content-Type: %s\r\n"
              "Content-Length: %ld\r\n"
-             "Connection: close\r\n"
-             "\r\n", mime_type, (long)file_size);
+             "Connection: %s\r\n"
+             "\r\n", mime_type, (long)file_size, keep_alive ? "keep-alive" : "close");
     
     write(client_fd, header_buf, strlen(header_buf));
 
@@ -86,14 +89,14 @@ void send_static_file(int client_fd, const char *file_path) {
     printf("[PID %d] Served %s (%ld bytes)\n", getpid(), file_path, (long)file_size);
 }
 
-void send_echo_response(int client_fd, const char *body, int content_length) {
+void send_echo_response(int client_fd, const char *body, int content_length, int keep_alive) {
     char header_buf[256];
     snprintf(header_buf, sizeof(header_buf),
              "HTTP/1.1 200 OK\r\n"
              "Content-Type: text/plain\r\n"
              "Content-Length: %d\r\n"
-             "Connection: close\r\n"
-             "\r\n", content_length);
+             "Connection: %s\r\n"
+             "\r\n", content_length, keep_alive ? "keep-alive" : "close");
     write(client_fd, header_buf, strlen(header_buf));
     if (body) {
         write(client_fd, body, content_length);

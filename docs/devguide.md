@@ -60,3 +60,11 @@ We have successfully transformed a single-connection socket program into a fully
 ### 10. Security (Path Traversal Protection)
 - Added security checks in the router to explicitly prevent clients from requesting files outside the designated `public/` folder.
 - If a client requests a URI containing `..` (e.g., `/../../etc/passwd`), the server immediately rejects the request and returns a `403 Forbidden` response.
+
+### 11. Keep-Alive Connections (Persistent Connections)
+- Upgraded the server to support HTTP `Keep-Alive`, allowing clients to reuse the same TCP socket for multiple sequential requests.
+- **How it works:**
+  - The `http_parser` extracts the `Connection` header. If it is set to `keep-alive`, a flag is passed down the pipeline.
+  - In `server.c`, the worker thread enters a `do-while` loop for that client socket instead of closing it immediately.
+  - A 5-second socket read timeout (`SO_RCVTIMEO`) is enforced to ensure the worker thread does not hang indefinitely if the client idles or drops the connection.
+  - Responses dynamically inject `Connection: keep-alive` headers so the client knows the connection remains open.

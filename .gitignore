@@ -4,6 +4,4 @@
 *.exe
 *.out
 
-src/server
-
-todo
+http-server

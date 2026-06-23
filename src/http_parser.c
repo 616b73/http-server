@@ -55,7 +55,10 @@ HttpRequest *parse_http_request(int client_fd) {
     for (int i = 0; i < req->header_count; i++) {
         if (strcasecmp(req->headers[i].key, "Content-Length") == 0) {
             req->content_length = atoi(req->headers[i].value);
-            break;
+        } else if (strcasecmp(req->headers[i].key, "Connection") == 0) {
+            if (strcasecmp(req->headers[i].value, "keep-alive") == 0) {
+                req->keep_alive = 1;
+            }
         }
     }
 
@@ -83,4 +86,14 @@ void free_http_request(HttpRequest *req) {
     if (!req) return;
     if (req->body) free(req->body);
     free(req);
+}
+
+const char *get_header(HttpRequest *req, const char *key) {
+    if (!req || !key) return NULL;
+    for (int i = 0; i < req->header_count; i++) {
+        if (strcasecmp(req->headers[i].key, key) == 0) {
+            return req->headers[i].value;
+        }
+    }
+    return NULL;
 }
